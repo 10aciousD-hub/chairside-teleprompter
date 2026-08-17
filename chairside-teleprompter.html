@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ChairSide Teleprompter</title>
+<style>
+  :root{
+    --navy: #0B1220;
+    --navy-2: #101a30;
+    --gold: #C9A227;
+    --gold-soft: #E4C766;
+    --ink: #F5F1E6;
+    --muted: #8A93A6;
+    --danger: #C4453C;
+    --scrim: rgba(11,18,32,0.82);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+  html,body{
+    margin:0; padding:0; height:100%; background:var(--navy);
+    font-family:-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    color:var(--ink); overscroll-behavior:none;
+  }
+  #app{position:fixed; inset:0; overflow:hidden;}
+
+  /* ---------- Screen: Script Editor ---------- */
+  #editorScreen{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+    background: radial-gradient(1200px 800px at 50% -10%, var(--navy-2), var(--navy));
+  }
+  .brand{
+    display:flex; align-items:baseline; gap:8px; margin-bottom:4px;
+  }
+  .brand .dot{color:var(--gold); font-size:22px; line-height:1;}
+  .brand h1{
+    font-size:19px; letter-spacing:0.02em; margin:0; font-weight:700;
+  }
+  .brand h1 span{color:var(--gold-soft);}
+  .subtitle{color:var(--muted); font-size:13px; margin:0 0 18px 0;}
+
+  textarea#scriptInput{
+    flex:1; width:100%; resize:none; border-radius:14px;
+    border:1px solid rgba(201,162,39,0.25);
+    background: rgba(255,255,255,0.03);
+    color:var(--ink); padding:16px; font-size:17px; line-height:1.6;
+    font-family: inherit;
+    outline:none;
+  }
+  textarea#scriptInput:focus{border-color: var(--gold);}
+  textarea#scriptInput::placeholder{color:var(--muted);}
+
+  .row{display:flex; align-items:center; gap:12px; margin-top:14px;}
+  .field{flex:1;}
+  .field label{
+    display:block; font-size:11px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:0.08em; margin-bottom:6px;
+  }
+  input[type=range]{
+    width:100%; accent-color: var(--gold);
+  }
+
+  .primaryBtn{
+    margin-top:18px; width:100%; padding:16px; border:none; border-radius:14px;
+    background: linear-gradient(180deg, var(--gold-soft), var(--gold));
+    color:#1a1406; font-weight:700; font-size:16px; letter-spacing:0.02em;
+    cursor:pointer;
+  }
+  .primaryBtn:active{opacity:0.85;}
+  .hint{
+    text-align:center; color:var(--muted); font-size:12px; margin-top:10px;
+  }
+  .hint b{color:var(--gold-soft); font-weight:600;}
+
+  /* ---------- Screen: Camera / Prompter ---------- */
+  #promptScreen{position:absolute; inset:0; display:none; background:#000;}
+  video#camera{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform: scaleX(-1);
+  }
+  video#camera.back{transform:none;}
+
+  #scriptOverlay{
+    position:absolute; left:0; right:0; top:0; height:62%;
+    background: linear-gradient(180deg, var(--scrim) 0%, rgba(11,18,32,0.72) 70%, rgba(11,18,32,0) 100%);
+    overflow:hidden;
+  }
+  #scriptScroller{
+    position:absolute; left:0; right:0; padding: 26vh 22px 40px;
+    will-change: transform;
+  }
+  #scriptScroller p{
+    font-size: 26px; line-height:1.55; margin:0; font-weight:600;
+    text-align:center; color:var(--ink);
+    text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+  }
+
+  #topBar{
+    position:absolute; top: env(safe-area-inset-top); left:0; right:0;
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 16px; z-index:5;
+  }
+  .iconBtn{
+    width:42px; height:42px; border-radius:50%; border:1px solid rgba(255,255,255,0.25);
+    background: rgba(11,18,32,0.55); color:var(--ink); font-size:18px;
+    display:flex; align-items:center; justify-content:center;
+    backdrop-filter: blur(6px);
+  }
+
+  #recIndicator{
+    display:none; align-items:center; gap:8px; background:rgba(11,18,32,0.55);
+    border-radius:20px; padding:8px 14px; font-size:13px; font-weight:600;
+    border:1px solid rgba(255,255,255,0.2);
+  }
+  #recIndicator.on{display:flex;}
+  #recDot{width:9px; height:9px; border-radius:50%; background:var(--danger); animation: pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+
+  #bottomBar{
+    position:absolute; left:0; right:0; bottom: env(safe-area-inset-bottom);
+    padding: 10px 18px max(18px, env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; gap:10px; z-index:5;
+  }
+  #speedRow{display:flex; align-items:center; gap:10px;}
+  #speedRow span{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em; min-width:44px;}
+  #speedRow input[type=range]{flex:1;}
+
+  #controlsRow{
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .ghostBtn{
+    width:52px; height:52px; border-radius:50%; border:1px solid rgba(255,255,255,0.25);
+    background: rgba(11,18,32,0.55); color:var(--ink); font-size:20px;
+    display:flex; align-items:center; justify-content:center; backdrop-filter: blur(6px);
+  }
+  #recordBtn{
+    width:74px; height:74px; border-radius:50%; border:4px solid var(--ink);
+    background: var(--danger); display:flex; align-items:center; justify-content:center;
+  }
+  #recordBtn .inner{width:28px; height:28px; border-radius:6px; background:var(--ink);}
+  #recordBtn.recording .inner{border-radius:50%;}
+
+  /* ---------- Screen: Review ---------- */
+  #reviewScreen{
+    position:absolute; inset:0; display:none; background:var(--navy);
+    flex-direction:column; align-items:center; justify-content:center; padding:24px; gap:16px;
+  }
+  #reviewScreen video{width:100%; max-width:420px; border-radius:16px; background:#000;}
+  .reviewBtns{display:flex; gap:12px; width:100%; max-width:420px;}
+  .reviewBtns a, .reviewBtns button{
+    flex:1; text-align:center; padding:15px; border-radius:12px; text-decoration:none;
+    font-weight:700; font-size:15px; border:none; cursor:pointer;
+  }
+  #saveLink{background: linear-gradient(180deg, var(--gold-soft), var(--gold)); color:#1a1406;}
+  #discardBtn{background: rgba(255,255,255,0.08); color:var(--ink); border:1px solid rgba(255,255,255,0.2);}
+  #reviewScreen p{color:var(--muted); font-size:13px; text-align:center; max-width:420px;}
+
+  #permError{
+    position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; padding:30px; text-align:center; background:var(--navy);
+  }
+  #permError h2{margin:0; font-size:18px;}
+  #permError p{color:var(--muted); font-size:14px; margin:0; max-width:320px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- SCRIPT EDITOR -->
+  <div id="editorScreen">
+    <div class="brand"><span class="dot">●</span><h1>ChairSide <span>Teleprompter</span></h1></div>
+    <p class="subtitle">Paste your script, then record while you read it off the camera.</p>
+    <textarea id="scriptInput" placeholder="Paste or type your dialogue here...">Welcome back to the chair. Today I want to talk about something that trips up almost every first-time homebuyer...</textarea>
+    <div class="row">
+      <div class="field">
+        <label>Text size</label>
+        <input type="range" id="fontSizeRange" min="18" max="44" value="26">
+      </div>
+      <div class="field">
+        <label>Camera</label>
+        <input type="range" id="camPick" min="0" max="1" value="0" step="1">
+      </div>
+    </div>
+    <button class="primaryBtn" id="startBtn">Start Teleprompter →</button>
+    <p class="hint">Front camera by default. You can flip it once you're recording.</p>
+  </div>
+
+  <!-- CAMERA / PROMPTER -->
+  <div id="promptScreen">
+    <video id="camera" autoplay playsinline muted></video>
+    <div id="scriptOverlay"><div id="scriptScroller"><p id="scriptText"></p></div></div>
+
+    <div id="topBar">
+      <div class="iconBtn" id="backBtn">✕</div>
+      <div id="recIndicator"><div id="recDot"></div><span id="recTimer">0:00</span></div>
+      <div class="iconBtn" id="flipBtn">⟳</div>
+    </div>
+
+    <div id="bottomBar">
+      <div id="speedRow">
+        <span>Speed</span>
+        <input type="range" id="speedRange" min="0" max="60" value="18">
+        <span id="playPauseIcon" style="min-width:auto; cursor:pointer;">⏸</span>
+      </div>
+      <div id="controlsRow">
+        <div class="ghostBtn" id="fontDownBtn">A−</div>
+        <div id="recordBtn"><div class="inner"></div></div>
+        <div class="ghostBtn" id="fontUpBtn">A+</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REVIEW -->
+  <div id="reviewScreen">
+    <video id="reviewVideo" controls playsinline></video>
+    <p>Tap <b>Save</b>, then use the share icon in the player to add it to Photos.</p>
+    <div class="reviewBtns">
+      <button id="discardBtn">Discard</button>
+      <a id="saveLink" download="chairside-take.mp4">Save Video</a>
+    </div>
+    <button class="primaryBtn" id="newTakeBtn" style="max-width:420px;">Record Another Take</button>
+  </div>
+
+  <!-- PERMISSION ERROR -->
+  <div id="permError">
+    <h2>Camera access needed</h2>
+    <p id="permErrorMsg">This app needs camera and microphone access to work. Open this page in Safari (not a downloaded file) and allow access when prompted.</p>
+    <button class="primaryBtn" id="permRetryBtn" style="max-width:280px;">Try Again</button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const editorScreen = document.getElementById('editorScreen');
+  const promptScreen = document.getElementById('promptScreen');
+  const reviewScreen = document.getElementById('reviewScreen');
+  const permError = document.getElementById('permError');
+
+  const scriptInput = document.getElementById('scriptInput');
+  const fontSizeRange = document.getElementById('fontSizeRange');
+  const camPick = document.getElementById('camPick');
+  const startBtn = document.getElementById('startBtn');
+
+  const cameraEl = document.getElementById('camera');
+  const scriptText = document.getElementById('scriptText');
+  const scriptScroller = document.getElementById('scriptScroller');
+  const scriptOverlay = document.getElementById('scriptOverlay');
+  const speedRange = document.getElementById('speedRange');
+  const playPauseIcon = document.getElementById('playPauseIcon');
+  const backBtn = document.getElementById('backBtn');
+  const flipBtn = document.getElementById('flipBtn');
+  const recordBtn = document.getElementById('recordBtn');
+  const recIndicator = document.getElementById('recIndicator');
+  const recTimer = document.getElementById('recTimer');
+  const fontUpBtn = document.getElementById('fontUpBtn');
+  const fontDownBtn = document.getElementById('fontDownBtn');
+
+  const reviewVideo = document.getElementById('reviewVideo');
+  const saveLink = document.getElementById('saveLink');
+  const discardBtn = document.getElementById('discardBtn');
+  const newTakeBtn = document.getElementById('newTakeBtn');
+  const permRetryBtn = document.getElementById('permRetryBtn');
+
+  let stream = null;
+  let facingMode = 'user';
+  let mediaRecorder = null;
+  let chunks = [];
+  let recording = false;
+  let recStartTime = 0;
+  let recTimerInterval = null;
+
+  let scrollY = 0;
+  let scrolling = true;
+  let rafId = null;
+  let dragStartY = 0, dragStartScroll = 0, dragging = false;
+
+  function showScreen(el){
+    [editorScreen, promptScreen, reviewScreen, permError].forEach(s => s.style.display = 'none');
+    el.style.display = (el === editorScreen) ? 'flex' : (el===promptScreen ? 'block' : 'flex');
+  }
+
+  fontSizeRange.addEventListener('input', () => {
+    scriptText.style.fontSize = fontSizeRange.value + 'px';
+  });
+  fontUpBtn.addEventListener('click', () => {
+    let s = parseInt(getComputedStyle(scriptText).fontSize);
+    scriptText.style.fontSize = Math.min(s+3, 60) + 'px';
+  });
+  fontDownBtn.addEventListener('click', () => {
+    let s = parseInt(getComputedStyle(scriptText).fontSize);
+    scriptText.style.fontSize = Math.max(s-3, 14) + 'px';
+  });
+
+  async function startCamera(){
+    try{
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facingMode },
+        audio: true
+      });
+      cameraEl.srcObject = stream;
+      cameraEl.classList.toggle('back', facingMode === 'environment');
+      showScreen(promptScreen);
+    }catch(err){
+      document.getElementById('permErrorMsg').textContent =
+        'Camera/mic access failed (' + err.name + '). Make sure you opened this page over a secure link in Safari, and allow camera + microphone when asked.';
+      showScreen(permError);
+    }
+  }
+
+  startBtn.addEventListener('click', () => {
+    scriptText.textContent = scriptInput.value.trim() || '(no script entered)';
+    scriptText.style.fontSize = fontSizeRange.value + 'px';
+    facingMode = camPick.value === '1' ? 'environment' : 'user';
+    scrollY = 0;
+    startCamera();
+  });
+
+  permRetryBtn.addEventListener('click', startCamera);
+
+  backBtn.addEventListener('click', () => {
+    stopScrollLoop();
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+    if(recording) stopRecording(true);
+    showScreen(editorScreen);
+  });
+
+  flipBtn.addEventListener('click', () => {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    startCamera();
+  });
+
+  // ---- Auto-scroll ----
+  function scrollLoop(){
+    if(scrolling && !dragging){
+      const speed = parseInt(speedRange.value); // px/sec-ish
+      scrollY -= speed / 60;
+      scriptScroller.style.transform = 'translateY(' + scrollY + 'px)';
+    }
+    rafId = requestAnimationFrame(scrollLoop);
+  }
+  function stopScrollLoop(){ if(rafId) cancelAnimationFrame(rafId); rafId = null; }
+
+  playPauseIcon.addEventListener('click', () => {
+    scrolling = !scrolling;
+    playPauseIcon.textContent = scrolling ? '⏸' : '▶';
+  });
+
+  // Manual drag to scroll
+  scriptOverlay.addEventListener('touchstart', (e) => {
+    dragging = true;
+    dragStartY = e.touches[0].clientY;
+    dragStartScroll = scrollY;
+  }, {passive:true});
+  scriptOverlay.addEventListener('touchmove', (e) => {
+    if(!dragging) return;
+    const dy = e.touches[0].clientY - dragStartY;
+    scrollY = dragStartScroll + dy;
+    scriptScroller.style.transform = 'translateY(' + scrollY + 'px)';
+  }, {passive:true});
+  scriptOverlay.addEventListener('touchend', () => { dragging = false; });
+
+  // ---- Recording ----
+  function pickMimeType(){
+    const options = ['video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+    for(const o of options){
+      if(window.MediaRecorder && MediaRecorder.isTypeSupported(o)) return o;
+    }
+    return '';
+  }
+
+  function startRecording(){
+    if(!stream) return;
+    chunks = [];
+    const mimeType = pickMimeType();
+    try{
+      mediaRecorder = mimeType ? new MediaRecorder(stream, {mimeType}) : new MediaRecorder(stream);
+    }catch(e){
+      mediaRecorder = new MediaRecorder(stream);
+    }
+    mediaRecorder.ondataavailable = (e) => { if(e.data && e.data.size>0) chunks.push(e.data); };
+    mediaRecorder.onstop = onRecordingStop;
+    mediaRecorder.start();
+    recording = true;
+    recordBtn.classList.add('recording');
+    recIndicator.classList.add('on');
+    recStartTime = Date.now();
+    recTimerInterval = setInterval(() => {
+      const s = Math.floor((Date.now()-recStartTime)/1000);
+      const m = Math.floor(s/60);
+      recTimer.textContent = m + ':' + String(s%60).padStart(2,'0');
+    }, 250);
+  }
+
+  function stopRecording(discard){
+    if(mediaRecorder && mediaRecorder.state !== 'inactive'){
+      if(discard) mediaRecorder.onstop = () => {};
+      mediaRecorder.stop();
+    }
+    recording = false;
+    recordBtn.classList.remove('recording');
+    recIndicator.classList.remove('on');
+    clearInterval(recTimerInterval);
+  }
+
+  function onRecordingStop(){
+    const mimeType = mediaRecorder.mimeType || 'video/webm';
+    const blob = new Blob(chunks, {type: mimeType});
+    const url = URL.createObjectURL(blob);
+    reviewVideo.src = url;
+    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    saveLink.href = url;
+    saveLink.download = 'chairside-take-' + Date.now() + '.' + ext;
+    showScreen(reviewScreen);
+  }
+
+  recordBtn.addEventListener('click', () => {
+    if(!recording){ startRecording(); } else { stopRecording(false); }
+  });
+
+  discardBtn.addEventListener('click', () => {
+    showScreen(promptScreen);
+  });
+  newTakeBtn.addEventListener('click', () => {
+    scrollY = 0;
+    scrolling = true;
+    playPauseIcon.textContent = '⏸';
+    showScreen(promptScreen);
+  });
+
+  scrollLoop();
+})();
+</script>
+</body>
+</html>

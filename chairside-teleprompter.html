@@ -106,6 +106,7 @@
     display:flex; align-items:center; justify-content:center;
     backdrop-filter: blur(6px);
   }
+  .iconBtn.disabled{opacity:0.35; pointer-events:none;}
 
   #recIndicator{
     display:none; align-items:center; gap:8px; background:rgba(11,18,32,0.55);
@@ -182,7 +183,7 @@
       </div>
     </div>
     <button class="primaryBtn" id="startBtn">Start Teleprompter →</button>
-    <p class="hint">Front camera by default. You can flip it once you're recording.</p>
+    <p class="hint">Front camera by default. Flip it anytime before you hit record — it locks during a take.</p>
   </div>
 
   <!-- CAMERA / PROMPTER -->
@@ -271,9 +272,10 @@
   let recTimerInterval = null;
 
   let scrollY = 0;
-  let scrolling = true;
+  let scrolling = false;
   let rafId = null;
   let dragStartY = 0, dragStartScroll = 0, dragging = false;
+  let scrollStartTimer = null;
 
   function showScreen(el){
     [editorScreen, promptScreen, reviewScreen, permError].forEach(s => s.style.display = 'none');
@@ -314,6 +316,10 @@
     scriptText.style.fontSize = fontSizeRange.value + 'px';
     facingMode = camPick.value === '1' ? 'environment' : 'user';
     scrollY = 0;
+    scrolling = false;
+    playPauseIcon.textContent = '▶';
+    stopScrollLoop();
+    scrollLoop();
     startCamera();
   });
 
@@ -321,12 +327,14 @@
 
   backBtn.addEventListener('click', () => {
     stopScrollLoop();
+    clearTimeout(scrollStartTimer);
     if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
     if(recording) stopRecording(true);
     showScreen(editorScreen);
   });
 
   flipBtn.addEventListener('click', () => {
+    if(recording) return; // switching the stream mid-recording would kill the take
     facingMode = facingMode === 'user' ? 'environment' : 'user';
     startCamera();
   });
@@ -385,6 +393,7 @@
     recording = true;
     recordBtn.classList.add('recording');
     recIndicator.classList.add('on');
+    flipBtn.classList.add('disabled');
     recStartTime = Date.now();
     recTimerInterval = setInterval(() => {
       const s = Math.floor((Date.now()-recStartTime)/1000);
@@ -401,7 +410,9 @@
     recording = false;
     recordBtn.classList.remove('recording');
     recIndicator.classList.remove('on');
+    flipBtn.classList.remove('disabled');
     clearInterval(recTimerInterval);
+    clearTimeout(scrollStartTimer);
   }
 
   function onRecordingStop(){
@@ -416,20 +427,32 @@
   }
 
   recordBtn.addEventListener('click', () => {
-    if(!recording){ startRecording(); } else { stopRecording(false); }
+    if(!recording){
+      startRecording();
+      // give the presenter a beat to settle before the script starts moving
+      scrolling = false;
+      playPauseIcon.textContent = '▶';
+      clearTimeout(scrollStartTimer);
+      scrollStartTimer = setTimeout(() => {
+        scrolling = true;
+        playPauseIcon.textContent = '⏸';
+      }, 900);
+    } else {
+      stopRecording(false);
+    }
   });
 
   discardBtn.addEventListener('click', () => {
     scrollY = 0;
-    scrolling = true;
-    playPauseIcon.textContent = '⏸';
+    scrolling = false;
+    playPauseIcon.textContent = '▶';
     scriptScroller.style.transform = 'translateY(' + scrollY + 'px)';
     showScreen(promptScreen);
   });
   newTakeBtn.addEventListener('click', () => {
     scrollY = 0;
-    scrolling = true;
-    playPauseIcon.textContent = '⏸';
+    scrolling = false;
+    playPauseIcon.textContent = '▶';
     showScreen(promptScreen);
   });
 

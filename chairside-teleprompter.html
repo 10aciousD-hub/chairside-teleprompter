@@ -298,7 +298,7 @@
     try{
       if(stream){ stream.getTracks().forEach(t=>t.stop()); }
       stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facingMode },
+        video: { facingMode: facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: true
       });
       cameraEl.srcObject = stream;
@@ -371,7 +371,10 @@
 
   // ---- Recording ----
   function pickMimeType(){
-    const options = ['video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
+    // vp8 before vp9: vp9 software encoding on mid/low-end Android hardware can fall
+    // behind in real time, and a lagging encoder is associated with the audio track
+    // silently dropping out of the webm mux partway through while video keeps playing.
+    const options = ['video/mp4','video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm'];
     for(const o of options){
       if(window.MediaRecorder && MediaRecorder.isTypeSupported(o)) return o;
     }
@@ -389,7 +392,7 @@
     }
     mediaRecorder.ondataavailable = (e) => { if(e.data && e.data.size>0) chunks.push(e.data); };
     mediaRecorder.onstop = onRecordingStop;
-    mediaRecorder.start();
+    mediaRecorder.start(1000); // flush every second instead of buffering the whole take internally
     recording = true;
     recordBtn.classList.add('recording');
     recIndicator.classList.add('on');
